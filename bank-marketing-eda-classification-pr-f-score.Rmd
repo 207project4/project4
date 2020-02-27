@@ -1297,11 +1297,17 @@ ggplot(ranger_tune) +
 ```
 
 
-
-
-
 ```{r}
 rf = ranger(y ~ .,
+            data = bank_train,
+            num.trees = 1000,
+            importance = "impurity",
+            splitrule = ranger_tune$bestTune$splitrule,
+            mtry = ranger_tune$bestTune$mtry,
+            min.node.size = ranger_tune$bestTune$min.node.size,
+            write.forest = T,
+            probability = T)
+rf_simple = ranger( y ~ . - job - marital - education - previous - euribor3m - cons.conf.idx - campaign,
             data = bank_train,
             num.trees = 1000,
             importance = "impurity",
@@ -1317,12 +1323,14 @@ rf = ranger(y ~ .,
 
 ```{r}
 print(rf)
+print(rf_simple)
 ```
 
 ### Features importance
 
 ```{r}
 fun_imp_ggplot_split(rf)
+fun_imp_ggplot_split(rf_simple)
 ```
 
 ### Predicted scores
@@ -1333,6 +1341,13 @@ rf_train_score = predict(rf,
 
 rf_test_score = predict(rf,
                         data = bank_test)$predictions[, 2]
+#simple
+
+rf_train_score_simple = predict(rf_simple,
+                         data = bank_train)$predictions[, 2]
+
+rf_test_score_simple = predict(rf_simple,
+                        data = bank_test)$predictions[, 2]
 ```
 
 ### Cut identification
@@ -1341,6 +1356,13 @@ rf_test_score = predict(rf,
 measure_train = fun_gg_cutoff(rf_train_score, bank_train$y, 
                               "acc", "f")
 measure_train +
+  geom_vline(xintercept = c(0.3, 0.5), 
+             linetype = "dashed")
+
+#simple
+measure_train_simple = fun_gg_cutoff(rf_train_score_simple, bank_train$y, 
+                              "acc", "f")
+measure_train_simple +
   geom_vline(xintercept = c(0.3, 0.5), 
              linetype = "dashed")
 ```
@@ -1355,6 +1377,16 @@ rf_train_confm = confusionMatrix(rf_train_class, bank_train$y,
                                  positive = "1",
                                  mode = "everything")
 rf_train_confm
+
+#simple
+
+rf_train_cut = 0.3
+rf_train_class_simple = fun_cut_predict(rf_train_score_simple, rf_train_cut)
+# matrix
+rf_train_confm_simple = confusionMatrix(rf_train_class_simple, bank_train$y, 
+                                 positive = "1",
+                                 mode = "everything")
+rf_train_confm_simple
 ```
 
 ### Validation (cut cost and confusion matrix)
@@ -1366,6 +1398,14 @@ measure_test = fun_gg_cutoff(rf_test_score, bank_test$y,
 measure_test +
   geom_vline(xintercept = c(rf_train_cut, 0.5), 
              linetype = "dashed")
+
+#simple
+
+measure_test_simple = fun_gg_cutoff(rf_test_score_simple, bank_test$y, 
+                             "acc", "f")
+measure_test_simple +
+  geom_vline(xintercept = c(rf_train_cut, 0.5), 
+             linetype = "dashed")
 ```
 
 ```{r}
@@ -1375,6 +1415,14 @@ rf_test_confm = confusionMatrix(rf_test_class, bank_test$y,
                                 positive = "1",
                                 mode = "everything")
 rf_test_confm
+
+#simple
+rf_test_class_simple = fun_cut_predict(rf_test_score_simple, rf_train_cut)
+# matrix
+rf_test_confm_simple = confusionMatrix(rf_test_class_simple, bank_test$y, 
+                                positive = "1",
+                                mode = "everything")
+rf_test_confm_simple
 ```
 
 
@@ -1389,6 +1437,7 @@ Let's start by figuring out how the different models perform on training sets.
 score_train = data.frame("logistic complex" = logistic_train_score,
                          "logistic simple" = logistic_train_score_2,
                         "random forest" = rf_train_score,
+                        "random forest simple" = rf_train_score_simple,
                         "obs" = as.numeric(bank_train$y) - 1)
 
 
@@ -1420,22 +1469,28 @@ print(curves_train)
 ```{r, warning=F, message=F}
 data.frame("Model" = c("Logistic regression (complex)",
                        "Logistic regression (simple)",
-                       "Random forest (ranger)"),
+                       "Random forest (ranger)",
+                       "Random forest (simple)"),
            "AUROC" = c(auc(bank_train$y, logistic_train_score),
                        auc(bank_train$y, logistic_train_score_2),
-                       auc(bank_train$y, rf_train_score)),
+                       auc(bank_train$y, rf_train_score),
+                       auc(bank_train$y, rf_train_score_simple)),
            "AUPR" = c(aucpr(bank_train$y, logistic_train_score),
                       aucpr(bank_train$y, logistic_train_score_2),
-                      aucpr(bank_train$y, rf_train_score)),
+                      aucpr(bank_train$y, rf_train_score),
+                      aucpr(bank_train$y, rf_train_score_simple)),
            "Cut" = c(logistic_train_cut,
                      logistic_train_cut_2,
+                     rf_train_cut,
                      rf_train_cut),
            "Accuracy" = c(logistic_train_confm[["overall"]][["Accuracy"]],
                           logistic_train_confm_2[["overall"]][["Accuracy"]],
-                          rf_train_confm[["overall"]][["Accuracy"]]),
+                          rf_train_confm[["overall"]][["Accuracy"]],
+                          rf_train_confm_simple[["overall"]][["Accuracy"]]),
            "F1" = c(logistic_train_confm[["byClass"]][["F1"]],
                     logistic_train_confm_2[["byClass"]][["F1"]],
-                    rf_train_confm[["byClass"]][["F1"]]),
+                    rf_train_confm[["byClass"]][["F1"]],
+                    rf_train_confm_simple[["byClass"]][["F1"]]),
            stringsAsFactors = F)
 ```
 
@@ -1449,6 +1504,7 @@ The random forest out-performs every other models on the training set. But this 
 score_test = data.frame("logistic complex" = logistic_test_score,
                         "logistic simple" = logistic_test_score_2,
                         "random forest" = rf_test_score,
+                        "random forest simple" = rf_test_score_simple,
                         "obs" = as.numeric(bank_test$y) - 1)
 
 
@@ -1482,22 +1538,28 @@ The gap narrows alot with the validation set.
 ```{r, warning=F, message=F}
 df_final = data.frame("Model" = c("Logistic regression (complex)",
                                   "Logistic regression (simple)",
-                                  "Random forest (ranger)"),
+                                  "Random forest (ranger)",
+                                  "Random forest (simple)"),
                       "AUROC" = c(auc(bank_test$y, logistic_test_score),
                                   auc(bank_test$y, logistic_test_score_2),
-                                  auc(bank_test$y, rf_test_score)),
+                                  auc(bank_test$y, rf_test_score),
+                                  auc(bank_test$y, rf_test_score_simple)),
                       "AUPR" = c(aucpr(bank_test$y, logistic_test_score),
                                  aucpr(bank_test$y, logistic_test_score_2),
-                                 aucpr(bank_test$y, rf_test_score)),
+                                 aucpr(bank_test$y, rf_test_score),
+                                 aucpr(bank_test$y, rf_test_score_simple)),
                       "Cut" = c(logistic_train_cut,
                                 logistic_train_cut_2,
+                                rf_train_cut,
                                 rf_train_cut),
                       "Accuracy" = c(logistic_test_confm[["overall"]][["Accuracy"]],
                                      logistic_test_confm_2[["overall"]][["Accuracy"]],
-                                     rf_test_confm[["overall"]][["Accuracy"]]),
+                                     rf_test_confm[["overall"]][["Accuracy"]],
+                                     rf_test_confm_simple[["overall"]][["Accuracy"]]),
                       "F1" = c(logistic_test_confm[["byClass"]][["F1"]],
                                logistic_test_confm_2[["byClass"]][["F1"]],
-                               rf_test_confm[["byClass"]][["F1"]]),
+                               rf_test_confm[["byClass"]][["F1"]],
+                               rf_test_confm_simple[["byClass"]][["F1"]]),
                       stringsAsFactors = F)
 df_final %>% 
   arrange(-F1)
