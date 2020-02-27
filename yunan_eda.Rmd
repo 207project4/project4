@@ -1,0 +1,262 @@
+---
+title: "Project 4"
+output:
+  pdf_document: default
+  fontsize: 8pt
+  html_document:
+    df_print: paged
+    fig_caption: yes
+    number_sections: yes
+---
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 18px;
+  }
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE,message=FALSE,warning=FALSE)
+```
+
+
+Team ID: 3
+
+Name (): Kieran Zhou
+
+Name (): Liela Meng
+
+Name (): Yunan Hou
+
+Name (): Zhen Li
+
+Github repo link:https://github.com/maoqunqun/STA207_project4.git
+
+#  1.Introduction
+
+
+# 2.Data analysis
+
+## 2.1 Analysis plan
+
+## 2.1.1 Exploratory data analysis  
+ 
+
+```{r echo=F,message=FALSE}
+library(ggplot2)
+library(caret)
+library(caretEnsemble)
+library(ROSE)
+library(mlbench)
+library(DMwR)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(mlr)#for ugly table
+```
+
+The dataset has 41,188 rows and 21 columns.
+
+The first 20 variables are our potential explanatory variables and the last one (“y”) is the dependent variable.
+
+There are 12718 missing values in the dataset.
+
+We can’t afford to delete 8,597 rows in our dataset, it’s more than 20% of our observations.(summary of missing value(can't run on windows, keep it or not?))
+```{r, warning=F,fig.height=5 , fig.width=10}
+
+#Load the dataset
+setwd("C:\\Users\\yinan\\Desktop\\Project4\\bank")
+data <- read.csv("bank-additional-full.csv",header=TRUE,sep=";")
+
+#Summary on dataset
+summary(datause)
+dim(data)
+names(data)
+#ugly table
+#summarizeColumns(data) %>% knitr::kable( caption = 'Feature Summary before Data Preprocessing')
+
+#missing values
+sum(data == "unknown")
+
+#summary of missing value(can't run on windows, keep it or not?)
+#data %>% 
+#  summarise_all(list(~sum(. == "unknown"))) %>% 
+#  gather(key = "variable", value = "nr_unknown") %>% 
+#  arrange(-nr_unknown)
+```
+
+Exploratory Analysis
+
+*用boxplot看每个continuous variable和y的关系
+*用pie看每个discrete variable和y的关系（但是没做完，十个variable一个一个搞好麻烦，等个会写for循环的大佬搞定
+
+
+```{r, warning=F,fig.height=5 , fig.width=10}
+
+#continuous variable
+par(mfrow=c(3,3))
+p_age <- ggplot(data, aes(factor(y), age)) + geom_boxplot(aes(fill = factor(y)))
+p_age
+
+p_duration <- ggplot(data, aes(factor(y), duration)) + geom_boxplot(aes(fill = factor(y)))
+p_duration
+
+p_campaign <- ggplot(data, aes(factor(y), campaign)) + geom_boxplot(aes(fill = factor(y)))
+p_campaign
+
+p_pdays <- ggplot(data, aes(factor(y), pdays)) + geom_boxplot(aes(fill = factor(y)))
+p_pdays
+
+p_previous <- ggplot(data, aes(factor(y), previous)) + geom_boxplot(aes(fill = factor(y)))
+p_previous
+
+p_evr <- ggplot(data, aes(factor(y), data$emp.var.rate)) + geom_boxplot(aes(fill = factor(y)))
+p_evr
+
+p_ci <- ggplot(data, aes(factor(y), data$cons.price.idx)) + geom_boxplot(aes(fill = factor(y)))
+p_ci
+
+p_cci <- ggplot(data, aes(factor(y), data$cons.conf.idx)) + geom_boxplot(aes(fill = factor(y)))
+p_cci
+
+p_eb3 <- ggplot(data, aes(factor(y), data$euribor3m)) + geom_boxplot(aes(fill = factor(y)))
+p_eb3
+
+#discrete variable(unfinished)
+
+data_yes<-data[data$y=="yes",]
+data_no<-data[data$y=="no",]
+dim(data_yes)
+dim(data_no)
+par(mfrow=c(10,2))
+
+#marital 
+label1<-paste(c("divorced","married ","single","unknown"),round(100*table(data_yes$marital)/4640),"%",sep=" ")
+label2<-paste(c("divorced","married ","single","unknown"),round(100*table(data_no$marital)/36548),"%",sep=" ")
+pie(table(data_yes$marital),label=label1,main="pie chart of marital")
+pie(table(data_no$marital),label=label2,main="pie chart of marital")
+#housing
+label3<-paste(c("no","unknown","yes"),round(100*table(data_yes$housing)/4640),"%",sep=" ")
+label4<-paste(c("no","unknown","yes"),round(100*table(data_no$housing)/36548),"%",sep=" ")
+pie(table(data_yes$housing),label=label3,main="pie chart of housing")
+pie(table(data_no$housing),label=label4,main="pie chart of housing")
+
+```
+
+Generate dummy variables
+
+
+```{r, warning=F,fig.height=5 , fig.width=10}
+#Generate dummy variables
+
+data$Class<-factor(if_else(data$y == "yes", "1", "0"), levels = c("0", "1"))
+
+for(level in unique(data$job)){
+  data[paste("job", level, sep = "_")] <- ifelse(data$job == level, 1, 0)
+}
+
+for(level in unique(data$marital)){
+  data[paste("marital", level, sep = "_")] <- ifelse(data$marital == level, 1, 0)
+}
+
+for(level in unique(data$education)){
+  data[paste("education", level, sep = "_")] <- ifelse(data$education == level, 1, 0)
+}
+
+data$default_yes <- ifelse(data$default == "yes", 1, 0)
+
+data$housing_yes <- ifelse(data$housing == "yes", 1, 0)
+
+data$loan_yes <- ifelse(data$loan == "yes", 1, 0)
+
+for(level in unique(data$contact)){
+  data[paste("contact", level, sep = "_")] <- ifelse(data$contact == level, 1, 0)
+}
+
+for(level in unique(data$month)){
+  data[paste("month", level, sep = "_")] <- ifelse(data$month == level, 1, 0)
+}
+
+for(level in unique(data$day_of_week)){
+  data[paste("day", level, sep = "_")] <- ifelse(data$day_of_week == level, 1, 0)
+}
+
+for(level in unique(data$poutcome)){
+  data[paste("poutcome", level, sep = "_")] <- ifelse(data$poutcome == level, 1, 0)
+}
+
+#Remove unwanted columns
+data$X <- NULL
+data$job <- NULL
+data$marital <- NULL
+data$education <- NULL
+data$default <- NULL
+data$housing <- NULL
+data$loan <- NULL
+data$contact <- NULL
+data$month <- NULL
+data$day_of_week<- NULL
+data$poutcome <- NULL
+data$y <- NULL
+
+#correct variable name
+data$Class <- as.factor((data$Class))
+colnames(data)[15] <- "job_blue_collar"
+colnames(data)[14] <- "job_admin"
+colnames(data)[20] <- "job_self_employeed"
+```
+data Splitting (unfinished)
+
+```{r, warning=F,fig.height=5 , fig.width=10}
+#Splitting
+set.seed(1)
+training_size <- floor(0.80 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = training_size)
+training <- data[train_ind, ]
+testing <- data[-train_ind, ]
+
+#Normalizing(I do not know what the writer want to do since here,sorry)
+preProcValues <- preProcess(training, method = c("center", "scale"))
+scaled.training <- predict(preProcValues, training)
+scaled.testing <- predict(preProcValues, testing)
+```
+### 2.1.2 Model
+
+
+
+
+### 2.1.3 Hypothesis 
+
+
+
+
+## 2.2 Analysis result
+
+### 2.2.1 Model fitting result 
+
+
+
+### 2.2.2 Hypothesis testing
+
+
+
+### 2.2.3 Assumption satisfaction
+
+
+
+
+# 3.Discussion
+
+## 3.1 Conclusions and problems for further investigation
+
+
+
+## 3.2 Causal inference
+
+
+
+# 4.Reference
+
+   
