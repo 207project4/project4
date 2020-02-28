@@ -1,10 +1,13 @@
 ---
 title: "Bank Marketing - EDA + Classification Algorithms + PR Curve + F1 Score"
-output: 
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
   html_document:
-    toc: true
+    number_sections: yes
+    toc: yes
     toc_depth: 2
-    number_sections: true
 ---
 
 
@@ -1262,118 +1265,8 @@ At the end, the second logistic regression performs almost as good as the first 
 
 
 
-## Decision Tree
 
-We'll build up a decision tree by tuning the complexity parameter (cp) parameter.
-
-```{r}
-modelLookup("rpart")
-```
-
-
-```{r, message=F, warning=F}
-tune_grid = expand.grid(
-  cp = seq(from = 0, to = 0.01, by = 0.001)
-)
-
-tune_control = trainControl(
-  method = "cv", # cross-validation
-  number = 3, # with n folds 
-  summaryFunction = prSummary,
-  verboseIter = FALSE, # no training log
-  allowParallel = FALSE # FALSE for reproducible results 
-)
-
-rpart1_tune = train(
-  y ~ .,
-  data = bank_data,
-  metric = "F",
-  trControl = tune_control,
-  tuneGrid = tune_grid,
-  method = "rpart"
-)
-
-ggplot(rpart1_tune) +
-  theme(legend.position = "bottom")
-```
-
-```{r}
-tree = rpart(y ~ .,
-             data = bank_train,
-             cp = rpart1_tune$bestTune)
-```
-
-
-```{r}
-rpart.plot(tree)
-```
-
-### Features importance
-
-```{r}
-fun_imp_ggplot_split(tree)
-```
-
-For the same reasons as before, we'll build another tree with lesser features in the next section.
-
-### Predicted scores
-
-```{r}
-tree_train_score = predict(tree,
-                           newdata = bank_train,
-                           type = "prob")[, 2]
-
-tree_test_score = predict(tree,
-                          newdata = bank_test,
-                          type = "prob")[, 2]
-```
-
-### Cut identification
-
-```{r}
-measure_train = fun_gg_cutoff(tree_train_score, bank_train$y, 
-                              "acc", "f")
-measure_train +
-  geom_vline(xintercept = c(0.25, 0.5), 
-             linetype = "dashed")
-```
-
-### Confusion matrix - train data
-
-
-```{r}
-tree_train_cut = 0.25
-tree_train_class = fun_cut_predict(tree_train_score, tree_train_cut)
-tree_train_confm = confusionMatrix(tree_train_class, bank_train$y, 
-                                   positive = "1",
-                                   mode = "everything")
-tree_train_confm
-```
-
-The tree model is more accurate (around plus 2 percentage points) than the logistic ones on the training set, but its sensitivity has dropped (around minus 10 percentage points).
-
-### Validation (cut cost and confusion matrix)
-
-
-```{r}
-measure_test = fun_gg_cutoff(tree_test_score, bank_test$y, 
-                             "acc", "f")
-measure_test +
-  geom_vline(xintercept = c(tree_train_cut, 0.5), 
-             linetype = "dashed")
-```
-
-```{r}
-tree_test_class = fun_cut_predict(tree_test_score, tree_train_cut)
-# matrix
-tree_test_confm = confusionMatrix(tree_test_class, bank_test$y, 
-                                  positive = "1",
-                                  mode = "everything")
-tree_test_confm
-```
-
-
-
+1373
 ## Random Forest (ranger)
 
 ```{r}
@@ -1411,11 +1304,17 @@ ggplot(ranger_tune) +
 ```
 
 
-
-
-
 ```{r}
 rf = ranger(y ~ .,
+            data = bank_train,
+            num.trees = 1000,
+            importance = "impurity",
+            splitrule = ranger_tune$bestTune$splitrule,
+            mtry = ranger_tune$bestTune$mtry,
+            min.node.size = ranger_tune$bestTune$min.node.size,
+            write.forest = T,
+            probability = T)
+rf_simple = ranger( y ~ . - job - marital - education - previous - euribor3m - cons.conf.idx - campaign,
             data = bank_train,
             num.trees = 1000,
             importance = "impurity",
@@ -1431,12 +1330,14 @@ rf = ranger(y ~ .,
 
 ```{r}
 print(rf)
+print(rf_simple)
 ```
 
 ### Features importance
 
 ```{r}
 fun_imp_ggplot_split(rf)
+fun_imp_ggplot_split(rf_simple)
 ```
 
 ### Predicted scores
@@ -1447,6 +1348,13 @@ rf_train_score = predict(rf,
 
 rf_test_score = predict(rf,
                         data = bank_test)$predictions[, 2]
+#simple
+
+rf_train_score_simple = predict(rf_simple,
+                         data = bank_train)$predictions[, 2]
+
+rf_test_score_simple = predict(rf_simple,
+                        data = bank_test)$predictions[, 2]
 ```
 
 ### Cut identification
@@ -1455,6 +1363,13 @@ rf_test_score = predict(rf,
 measure_train = fun_gg_cutoff(rf_train_score, bank_train$y, 
                               "acc", "f")
 measure_train +
+  geom_vline(xintercept = c(0.3, 0.5), 
+             linetype = "dashed")
+
+#simple
+measure_train_simple = fun_gg_cutoff(rf_train_score_simple, bank_train$y, 
+                              "acc", "f")
+measure_train_simple +
   geom_vline(xintercept = c(0.3, 0.5), 
              linetype = "dashed")
 ```
@@ -1469,6 +1384,16 @@ rf_train_confm = confusionMatrix(rf_train_class, bank_train$y,
                                  positive = "1",
                                  mode = "everything")
 rf_train_confm
+
+#simple
+
+rf_train_cut = 0.3
+rf_train_class_simple = fun_cut_predict(rf_train_score_simple, rf_train_cut)
+# matrix
+rf_train_confm_simple = confusionMatrix(rf_train_class_simple, bank_train$y, 
+                                 positive = "1",
+                                 mode = "everything")
+rf_train_confm_simple
 ```
 
 ### Validation (cut cost and confusion matrix)
@@ -1480,6 +1405,14 @@ measure_test = fun_gg_cutoff(rf_test_score, bank_test$y,
 measure_test +
   geom_vline(xintercept = c(rf_train_cut, 0.5), 
              linetype = "dashed")
+
+#simple
+
+measure_test_simple = fun_gg_cutoff(rf_test_score_simple, bank_test$y, 
+                             "acc", "f")
+measure_test_simple +
+  geom_vline(xintercept = c(rf_train_cut, 0.5), 
+             linetype = "dashed")
 ```
 
 ```{r}
@@ -1489,372 +1422,16 @@ rf_test_confm = confusionMatrix(rf_test_class, bank_test$y,
                                 positive = "1",
                                 mode = "everything")
 rf_test_confm
+
+#simple
+rf_test_class_simple = fun_cut_predict(rf_test_score_simple, rf_train_cut)
+# matrix
+rf_test_confm_simple = confusionMatrix(rf_test_class_simple, bank_test$y, 
+                                positive = "1",
+                                mode = "everything")
+rf_test_confm_simple
 ```
 
-## Light GBM
-
-Light GBM isn't supported by caret package yet, so it'll use default parameters.
-
-```{r}
-bank_train_X_lgb = as.matrix(lgb.prepare_rules(bank_train %>% 
-                                                 select(-y))[[1]])
-bank_test_X_lgb = as.matrix(lgb.prepare_rules(bank_test %>% 
-                                                select(-y))[[1]])
-bank_train_Y_lgb = as.matrix(bank_train %>%
-                               select(y) %>% 
-                               mutate(y = as.numeric(as.character(y))))
-bank_test_Y_lgb = as.matrix(bank_test %>%
-                              select(y) %>% 
-                              mutate(y = as.numeric(as.character(y))))
-
-bank_train_lgb = lgb.Dataset(bank_train_X_lgb, 
-                             label = bank_train_Y_lgb)
-bank_test_lgb = lgb.Dataset(bank_test_X_lgb, 
-                            label = bank_test_Y_lgb)
-
-params_lgb = list(
-  objective = "binary", # type of exercise
-  metric = "auc", # metric to be evaluated 
-  num_iterations = 500, # number of boosting iterations
-  early_stopping_rounds = 200, # ill stop training if one metric of one validation data doesn't improve
-  learning_rate = 0.1, # shrinkage rate
-  max_depth = 4, # max depth for tree model (used to deal with over-fitting when data is small)
-  num_leaves = 7, # max number of leaves (nodes) in one tree
-  # scale_pos_weight = (1 - table(bank_train$y)[[2]]/length(bank_train$y)) * 100, # weight for positive class
-  is_unbalance = T,
-  min_data_in_leaf = 10, # min number of data in one leaf (used to deal with over-fitting)
-  feature_fraction = 0.9, # randomly select part of the features on each iteration
-  bagging_fraction = 0.9, # randomly select part of the data without resampling
-  bagging_freq = 1, # if != 0, enables bagging, performs bagging at every k iteration
-  num_threads = 6 # number of cpu cores (not threads) to use
-)
-
-lgb <- lgb.train(
-  params = params_lgb,
-  data = bank_train_lgb,
-  valids = list(train = bank_train_lgb, 
-                test = bank_test_lgb),
-  verbose = 1, # show results?
-  eval_freq = 50 # show metric every how many iterations?
-)
-```
-
-### Predicted scores
-
-```{r}
-lgb_train_score = predict(lgb,
-                          data = bank_train_X_lgb,
-                          n = lgb$best_iter)
-
-lgb_test_score = predict(lgb,
-                         data = bank_test_X_lgb,
-                         n = lgb$best_iter)
-```
-
-### Cut identification
-
-```{r}
-measure_train = fun_gg_cutoff(lgb_train_score, bank_train_Y_lgb, 
-                              "acc", "f")
-measure_train +
-  geom_vline(xintercept = c(0.75, 0.5), 
-             linetype = "dashed")
-```
-
-
-### Confusion matrix - train data
-
-
-```{r}
-lgb_train_cut = 0.75
-lgb_train_class = fun_cut_predict(lgb_train_score, lgb_train_cut)
-lgb_train_confm = confusionMatrix(lgb_train_class, bank_train$y, 
-                                  positive = "1",
-                                  mode = "everything")
-lgb_train_confm
-```
-
-### Validation (cut cost and confusion matrix)
-
-
-```{r}
-measure_test = fun_gg_cutoff(lgb_test_score, bank_test_Y_lgb, 
-                             "acc", "f")
-measure_test +
-  geom_vline(xintercept = c(lgb_train_cut, 0.5), 
-             linetype = "dashed")
-```
-
-```{r}
-lgb_test_class = fun_cut_predict(lgb_test_score, lgb_train_cut)
-lgb_test_confm = confusionMatrix(lgb_test_class, bank_test$y, 
-                                 positive = "1",
-                                 mode = "everything")
-lgb_test_confm
-```
-
-
-
-
-
-
-## XGBoost
-
-```{r}
-modelLookup("xgbTree")
-```
-
-XGBoost has 7 parameters to tune. Tuning all those parameters at the same time will take a lot of time. We'll follow the step-by-step tuning suggested by Pelkoja (https://www.kaggle.com/pelkoja/visual-xgboost-tuning-with-caret/code).
-
-```{r, warning=F, message=F}
-bank_X = as.matrix(lgb.prepare_rules(bank_data %>% 
-                                       select(-y))[[1]])
-bank_Y = bank_data$y
-
-nrounds = 1000
-
-tune_grid = expand.grid(
-  nrounds = seq(from = 200, to = nrounds, by = 50),
-  eta = c(0.025, 0.05, 0.1, 0.3),
-  max_depth = c(2, 3, 4, 5, 6),
-  gamma = 0,
-  colsample_bytree = 1,
-  min_child_weight = 1,
-  subsample = 1
-)
-
-tune_control = trainControl(
-  method = "cv", # cross-validation
-  number = 3, # with n folds 
-  summaryFunction = prSummary,
-  verboseIter = FALSE, # no training log
-  allowParallel = FALSE # FALSE for reproducible results 
-)
-
-xgb_tune = train(
-  x = bank_X,
-  y = bank_Y,
-  metric = "F",
-  trControl = tune_control,
-  tuneGrid = tune_grid,
-  method = "xgbTree",
-  verbose = FALSE
-)
-
-ggplot(xgb_tune) +
-  theme(legend.position = "bottom")
-```
-
-
-
-```{r, warning=F, message=F}
-tune_grid2 = expand.grid(
-  nrounds = seq(from = 50, to = nrounds, by = 50),
-  eta = xgb_tune$bestTune$eta,
-  max_depth = ifelse(xgb_tune$bestTune$max_depth == 2,
-                     c(xgb_tune$bestTune$max_depth:4),
-                     (xgb_tune$bestTune$max_depth - 1):(xgb_tune$bestTune$max_depth + 1)),
-  gamma = 0,
-  colsample_bytree = 1,
-  min_child_weight = c(1, 2, 3),
-  subsample = 1
-)
-
-xgb_tune2 = train(
-  x = bank_X,
-  y = bank_Y,
-  trControl = tune_control,
-  tuneGrid = tune_grid2,
-  metric = "F",
-  method = "xgbTree",
-  verbose = FALSE
-)
-
-ggplot(xgb_tune2) +
-  theme(legend.position = "bottom")
-```
-
-```{r, message=F, warning=F}
-tune_grid3 = expand.grid(
-  nrounds = seq(from = 50, to = nrounds, by = 50),
-  eta = xgb_tune$bestTune$eta,
-  max_depth = xgb_tune2$bestTune$max_depth,
-  gamma = 0,
-  colsample_bytree = c(0.4, 0.6, 0.8, 1.0),
-  min_child_weight = xgb_tune2$bestTune$min_child_weight,
-  subsample = c(0.5, 0.75, 1.0)
-)
-
-xgb_tune3 = train(
-  x = bank_X,
-  y = bank_Y,
-  trControl = tune_control,
-  tuneGrid = tune_grid3,
-  metric = "F",
-  method = "xgbTree",
-  verbose = FALSE
-)
-
-ggplot(xgb_tune3) +
-  theme(legend.position = "bottom")
-```
-
-
-```{r, message=F, warning=F}
-tune_grid4 = expand.grid(
-  nrounds = seq(from = 50, to = nrounds, by = 50),
-  eta = xgb_tune$bestTune$eta,
-  max_depth = xgb_tune2$bestTune$max_depth,
-  gamma = c(0, 0.05, 0.1, 0.5, 0.7, 0.9, 1.0),
-  colsample_bytree = xgb_tune3$bestTune$colsample_bytree,
-  min_child_weight = xgb_tune2$bestTune$min_child_weight,
-  subsample = xgb_tune3$bestTune$subsample
-)
-
-xgb_tune4 = train(
-  x = bank_X,
-  y = bank_Y,
-  trControl = tune_control,
-  tuneGrid = tune_grid4,
-  metric = "F",
-  method = "xgbTree",
-  verbose = FALSE
-)
-
-ggplot(xgb_tune4) +
-  theme(legend.position = "bottom")
-```
-
-
-```{r, message=F, warning=F}
-tune_grid5 = expand.grid(
-  nrounds = seq(from = 100, to = 2000, by = 100),
-  eta = c(0.01, 0.015, 0.025, 0.05, 0.1),
-  max_depth = xgb_tune2$bestTune$max_depth,
-  gamma = xgb_tune4$bestTune$gamma,
-  colsample_bytree = xgb_tune3$bestTune$colsample_bytree,
-  min_child_weight = xgb_tune2$bestTune$min_child_weight,
-  subsample = xgb_tune3$bestTune$subsample
-)
-
-xgb_tune5 = train(
-  x = bank_X,
-  y = bank_Y,
-  trControl = tune_control,
-  tuneGrid = tune_grid5,
-  metric = "F",
-  method = "xgbTree",
-  verbose = FALSE
-)
-
-ggplot(xgb_tune5) +
-  theme(legend.position = "bottom")
-```
-
-
-Now've every tuned hyperparameter.
-
-```{r}
-xgb_tune5$bestTune
-```
-
-Let's build our model.
-
-
-```{r}
-bank_train_X_xgb = as.matrix(lgb.prepare_rules(bank_train %>% 
-                                                 select(-y))[[1]])
-bank_test_X_xgb = as.matrix(lgb.prepare_rules(bank_test %>% 
-                                                select(-y))[[1]])
-bank_train_Y_xgb = as.matrix(bank_train %>%
-                               select(y) %>% 
-                               mutate(y = as.numeric(as.character(y))))
-bank_test_Y_xgb = as.matrix(bank_test %>%
-                              select(y) %>% 
-                              mutate(y = as.numeric(as.character(y))))
-
-bank_train_xgb = xgb.DMatrix(bank_train_X_xgb, 
-                             label = bank_train_Y_xgb)
-bank_test_xgb = xgb.DMatrix(bank_test_X_xgb, 
-                            label = bank_test_Y_xgb)
-
-params_xgb = list(
-  nthreads = 10, # parallel threads used
-  booster = "gbtree",
-  eval_metric = "aucpr",
-  learning_rate = xgb_tune5$bestTune$eta, # shrinkage rate
-  max_depth = xgb_tune5$bestTune$max_depth, # max depth for trees
-  subsample = xgb_tune5$bestTune$subsample, # subsample ratio per iteration
-  colsample_bytree = xgb_tune5$bestTune$colsample_bytree, # sample of features per iteration
-  min_child_weight = xgb_tune5$bestTune$min_child_weight
-)
-
-xgb <- xgb.train(
-  params = params_xgb,
-  data = bank_train_xgb,
-  watchlist = list(train = bank_train_xgb, 
-                   test = bank_test_xgb), # test as second data for xvalidation purposes
-  nrounds = xgb_tune5$bestTune$nrounds,
-  verbose = T,
-  print_every_n = 25,
-  maximize = T,
-  early_stopping_rounds = xgb_tune5$bestTune$nrounds
-)
-```
-
-### Predicted scores
-
-```{r}
-xgb_train_score = predict(xgb,
-                          newdata = bank_train_X_xgb,
-                          ntreelimit = xgb$best_iteration)
-
-xgb_test_score = predict(xgb,
-                         newdata = bank_test_X_xgb,
-                         ntreelimit = xgb$best_iteration)
-```
-
-### Cut identification
-
-```{r}
-measure_train = fun_gg_cutoff(xgb_train_score, bank_train_Y_xgb, 
-                              "acc", "f")
-measure_train +
-  geom_vline(xintercept = c(0.3, 0.5), 
-             linetype = "dashed")
-```
-
-
-### Confusion matrix - train data
-
-
-```{r}
-xgb_train_cut = 0.3
-xgb_train_class = fun_cut_predict(xgb_train_score, xgb_train_cut)
-xgb_train_confm = confusionMatrix(xgb_train_class, bank_train$y, 
-                                  positive = "1",
-                                  mode = "everything")
-xgb_train_confm
-```
-
-### Validation (cut cost and confusion matrix)
-
-
-```{r}
-measure_test = fun_gg_cutoff(xgb_test_score, bank_test_Y_xgb, 
-                             "acc", "f")
-measure_test +
-  geom_vline(xintercept = c(xgb_train_cut, 0.5), 
-             linetype = "dashed")
-```
-
-```{r}
-xgb_test_class = fun_cut_predict(xgb_test_score, xgb_train_cut)
-xgb_test_confm = confusionMatrix(xgb_test_class, bank_test$y, 
-                                 positive = "1",
-                                 mode = "everything")
-xgb_test_confm
-```
 
 
 # Model selection
@@ -1866,11 +1443,9 @@ Let's start by figuring out how the different models perform on training sets.
 ```{r}
 score_train = data.frame("logistic complex" = logistic_train_score,
                          "logistic simple" = logistic_train_score_2,
-                         "tree complex" = tree_train_score,
-                         "random forest" = rf_train_score,
-                         "light gbm" = lgb_train_score,
-                         "xgboost" = xgb_train_score,
-                         "obs" = as.numeric(bank_train$y) - 1)
+                        "random forest" = rf_train_score,
+                        "random forest simple" = rf_train_score_simple,
+                        "obs" = as.numeric(bank_train$y) - 1)
 
 
 roc_train = score_train %>%
@@ -1901,40 +1476,28 @@ print(curves_train)
 ```{r, warning=F, message=F}
 data.frame("Model" = c("Logistic regression (complex)",
                        "Logistic regression (simple)",
-                       "Decision tree",
                        "Random forest (ranger)",
-                       "Light GBM (default)",
-                       "XGBoost"),
+                       "Random forest (simple)"),
            "AUROC" = c(auc(bank_train$y, logistic_train_score),
                        auc(bank_train$y, logistic_train_score_2),
-                       auc(bank_train$y, tree_train_score),
                        auc(bank_train$y, rf_train_score),
-                       auc(bank_train$y, lgb_train_score),
-                       auc(bank_train$y, xgb_train_score)),
+                       auc(bank_train$y, rf_train_score_simple)),
            "AUPR" = c(aucpr(bank_train$y, logistic_train_score),
                       aucpr(bank_train$y, logistic_train_score_2),
-                      aucpr(bank_train$y, tree_train_score),
                       aucpr(bank_train$y, rf_train_score),
-                      aucpr(bank_train$y, lgb_train_score),
-                      aucpr(bank_train$y, xgb_train_score)),
+                      aucpr(bank_train$y, rf_train_score_simple)),
            "Cut" = c(logistic_train_cut,
                      logistic_train_cut_2,
-                     tree_train_cut,
                      rf_train_cut,
-                     lgb_train_cut,
-                     xgb_train_cut),
+                     rf_train_cut),
            "Accuracy" = c(logistic_train_confm[["overall"]][["Accuracy"]],
                           logistic_train_confm_2[["overall"]][["Accuracy"]],
-                          tree_train_confm[["overall"]][["Accuracy"]],
                           rf_train_confm[["overall"]][["Accuracy"]],
-                          lgb_train_confm[["overall"]][["Accuracy"]],
-                          xgb_train_confm[["overall"]][["Accuracy"]]),
+                          rf_train_confm_simple[["overall"]][["Accuracy"]]),
            "F1" = c(logistic_train_confm[["byClass"]][["F1"]],
                     logistic_train_confm_2[["byClass"]][["F1"]],
-                    tree_train_confm[["byClass"]][["F1"]],
                     rf_train_confm[["byClass"]][["F1"]],
-                    lgb_train_confm[["byClass"]][["F1"]],
-                    xgb_train_confm[["byClass"]][["F1"]]),
+                    rf_train_confm_simple[["byClass"]][["F1"]]),
            stringsAsFactors = F)
 ```
 
@@ -1947,10 +1510,8 @@ The random forest out-performs every other models on the training set. But this 
 ```{r}
 score_test = data.frame("logistic complex" = logistic_test_score,
                         "logistic simple" = logistic_test_score_2,
-                        "tree complex" = tree_test_score,
                         "random forest" = rf_test_score,
-                        "light gbm" = lgb_test_score,
-                        "xgboost" = xgb_test_score,
+                        "random forest simple" = rf_test_score_simple,
                         "obs" = as.numeric(bank_test$y) - 1)
 
 
@@ -1984,40 +1545,28 @@ The gap narrows alot with the validation set.
 ```{r, warning=F, message=F}
 df_final = data.frame("Model" = c("Logistic regression (complex)",
                                   "Logistic regression (simple)",
-                                  "Decision tree",
                                   "Random forest (ranger)",
-                                  "Light GBM (default)",
-                                  "XGBoost"),
+                                  "Random forest (simple)"),
                       "AUROC" = c(auc(bank_test$y, logistic_test_score),
                                   auc(bank_test$y, logistic_test_score_2),
-                                  auc(bank_test$y, tree_test_score),
                                   auc(bank_test$y, rf_test_score),
-                                  auc(bank_test$y, lgb_test_score),
-                                  auc(bank_test$y, xgb_test_score)),
+                                  auc(bank_test$y, rf_test_score_simple)),
                       "AUPR" = c(aucpr(bank_test$y, logistic_test_score),
                                  aucpr(bank_test$y, logistic_test_score_2),
-                                 aucpr(bank_test$y, tree_test_score),
                                  aucpr(bank_test$y, rf_test_score),
-                                 aucpr(bank_test$y, lgb_test_score),
-                                 aucpr(bank_test$y, xgb_test_score)),
+                                 aucpr(bank_test$y, rf_test_score_simple)),
                       "Cut" = c(logistic_train_cut,
                                 logistic_train_cut_2,
-                                tree_train_cut,
                                 rf_train_cut,
-                                lgb_train_cut,
-                                xgb_train_cut),
+                                rf_train_cut),
                       "Accuracy" = c(logistic_test_confm[["overall"]][["Accuracy"]],
                                      logistic_test_confm_2[["overall"]][["Accuracy"]],
-                                     tree_test_confm[["overall"]][["Accuracy"]],
                                      rf_test_confm[["overall"]][["Accuracy"]],
-                                     lgb_test_confm[["overall"]][["Accuracy"]],
-                                     xgb_test_confm[["overall"]][["Accuracy"]]),
+                                     rf_test_confm_simple[["overall"]][["Accuracy"]]),
                       "F1" = c(logistic_test_confm[["byClass"]][["F1"]],
                                logistic_test_confm_2[["byClass"]][["F1"]],
-                               tree_test_confm[["byClass"]][["F1"]],
                                rf_test_confm[["byClass"]][["F1"]],
-                               lgb_test_confm[["byClass"]][["F1"]],
-                               xgb_test_confm[["byClass"]][["F1"]]),
+                               rf_test_confm_simple[["byClass"]][["F1"]]),
                       stringsAsFactors = F)
 df_final %>% 
   arrange(-F1)
@@ -2026,7 +1575,7 @@ df_final %>%
 According to the F1 score, the XGBoost model is the best for our dataset. Let's look in detail what are the predictions.
 
 ```{r}
-xgb_test_confm
+#xgb_test_confm
 ```
 
 The XGBoost model has an accuracy close to `r as.numeric(100*xgb_test_confm$overall["Accuracy"])`%. As a reminder, the test set has 88.57% of "y = 0", so the idiotic model which always predicts "0" has an accuracy of 88.57%, which is better than our model, but this isn't an issue. We've decided to focus on the F1 score, to have a good rate of True Positive.
@@ -2040,8 +1589,4 @@ The Precision reachs `r as.numeric(100*xgb_test_confm$byClass["Precision"])`%, w
 **This is my first machine learning code, after learning from existing kaggle kernels. Let me know if you have any questions or comments. If you have any suggestion or corrections to make, please do not hesitate to let me know.**
 
 <hr>
-
-```{r}
-dim(bank_data)
-```
 
