@@ -273,6 +273,16 @@ gg_prcurve = function(df) {
   return(gg)
 }
 ```
+
+
+
+
+
+#eda
+```{r}
+
+```
+
 ```{r}
 bank_data = read.table("bank-additional-full.csv",header=TRUE,sep=";")
 ```
@@ -283,7 +293,12 @@ bank_data = bank_data %>%
 ```
 ```{r}
 bank_data = bank_data %>% 
-  mutate(age = if_else(age > 60, "high", if_else(age > 30, "mid", "low")))
+  mutate(age = if_else(age > 60, "above60", 
+                       if_else(age > 45, "froms45to60",
+                               if_else(age > 30, "froms30to45",
+                                       if_else(age > 15, "below30","null")))))
+bank_data$age<-as.factor(bank_data$age)
+
 ```
 ```{r}
 bank_data = bank_data %>% 
@@ -295,11 +310,7 @@ bank_data = bank_data %>%
 ```
 ```{r}
 bank_data = bank_data %>% 
-  filter(education != "illiterate")
-```
-```{r}
-bank_data = bank_data %>% 
-  mutate(education = recode(education, "unknown" = "university.degree"))
+  select(-education)
 ```
 ```{r}
 bank_data = bank_data %>% 
