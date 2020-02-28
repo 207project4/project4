@@ -279,9 +279,7 @@ gg_prcurve = function(df) {
 
 
 #eda
-```{r}
 
-```
 
 ```{r}
 bank_data = read.table("bank-additional-full.csv",header=TRUE,sep=";")
@@ -358,6 +356,7 @@ bank_data = bank_data %>%
 ```{r}
 bank_data = bank_data %>% 
   filter(campaign <= 10)
+bank_data$campaign<-as.factor(bank_data$campaign)
 ```
 ```{r}
 bank_data = bank_data %>% 
@@ -367,17 +366,19 @@ bank_data = bank_data %>%
 bank_data = bank_data %>% 
   mutate(pdays_dummy = if_else(pdays == 999, "0", "1")) %>% 
   select(-pdays)
+bank_data$pdays_dummy<-as.factor(bank_data$pdays_dummy)
 ```
 ```{r}
 bank_data = bank_data %>% 
   mutate(previous = if_else(previous >=  2, "2+", if_else(previous == 1, "1", "0")))
+bank_data$previous<-as.factor(bank_data$previous)
 ```
 ```{r}
 bank_data = bank_data %>% 
   select(-emp.var.rate)
 ```
 ```{r}
-set.seed(1234)
+set.seed(1)
 
 ind = createDataPartition(bank_data$y,
                           times = 1,
@@ -385,4 +386,9 @@ ind = createDataPartition(bank_data$y,
                           list = F)
 bank_train = bank_data[ind, ]
 bank_test = bank_data[-ind, ]
+
+```
+
+```{r}
+
 ```
