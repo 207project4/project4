@@ -81,8 +81,9 @@ library(ranger) # Optimized Random Forest [ranger()]
 library(xgboost) # XGBoost [xgb.DMatrix(), xgb.train()]
 library(MLmetrics) # Custom metrics (F1 score for example)
 library(tidyverse) # Data manipulation
-library(doMC) # Parallel processing
-registerDoMC(cores = 10)
+library(e1071)#for confusionMatrix
+#library(doMC) # Parallel processing
+#registerDoMC(cores = 10)
 ```
 
 
@@ -778,6 +779,12 @@ bank_data = bank_data %>%
 ```
 
 ```{r}
+bank_data %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(pdays_dummy), fill = y)) +
+  mosaic_theme +
+  xlab("Previous") +
+  ylab(NULL)
 fun_crosstable(bank_data, "pdays_dummy", "y")
 ```
 
@@ -1375,7 +1382,7 @@ modelLookup("ranger")
 
 The random forest has 3 parameters to tune.
 
-```{r, warning=F, message=F}
+```{r message=FALSE, warning=FALSE}
 tune_grid = expand.grid(
   mtry = c(1:(floor(ncol(bank_data) * 0.7))),
   splitrule = c("gini", "extratrees"),
